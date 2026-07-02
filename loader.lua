@@ -1,4 +1,5 @@
 local RAW_BASE_URL = "https://raw.githubusercontent.com/linkoro57/Mango-Hub/main/"
+local UI_SOURCE = "mango-ui.lua"
 
 local games = {
     {
@@ -225,7 +226,59 @@ local function httpGet(url)
     return false, result
 end
 
+local function ensureSharedUiFactory()
+    local existing = rawget(_G, "__MangoHubUIFactory")
+    if type(existing) == "table" then
+        return true
+    end
+
+    local loader = getLoader()
+    if type(loader) ~= "function" then
+        warn("[Mango Hub] Failed to preload Mango UI: loadstring/load is not available.")
+        return false
+    end
+
+    local fetchOk, source = httpGet(RAW_BASE_URL .. UI_SOURCE)
+    if not fetchOk or type(source) ~= "string" or source == "" then
+        warn("[Mango Hub] Failed to preload Mango UI: " .. tostring(source))
+        return false
+    end
+
+    local chunk, compileErr = loader(source)
+    if type(chunk) ~= "function" then
+        warn("[Mango Hub] Failed to compile Mango UI: " .. tostring(compileErr))
+        return false
+    end
+
+    local runOk, result = xpcall(chunk, function(message)
+        if type(debug) == "table" and type(debug.traceback) == "function" then
+            return debug.traceback(tostring(message), 2)
+        end
+        return tostring(message)
+    end)
+
+    if not runOk then
+        warn("[Mango Hub] Failed to run Mango UI: " .. tostring(result))
+        return false
+    end
+
+    if type(result) == "table" then
+        rawset(_G, "__MangoHubUIFactory", result)
+        return true
+    end
+
+    local loaded = rawget(_G, "__MangoHubUIFactory")
+    if type(loaded) == "table" then
+        return true
+    end
+
+    warn("[Mango Hub] Mango UI preload returned an invalid result.")
+    return false
+end
+
 local function runRemote(entry)
+    ensureSharedUiFactory()
+
     local loader = getLoader()
     if type(loader) ~= "function" then
         warn("[Mango Hub] loadstring/load is not available.")
