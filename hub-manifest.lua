@@ -4,7 +4,7 @@ HubManifest.games = {
     {
         key = "ban-or-be-banned",
         title = "Ban or Be Banned",
-        aliases = { "ban or be banned" },
+        aliases = { "ban or be banned", "ban or get banned" },
         source = "ban-or-be-banned.lua",
         placeIds = { 96017656548489 },
         signatures = {
@@ -33,7 +33,7 @@ HubManifest.games = {
     {
         key = "jump-brainrot",
         title = "Jump Brainrot",
-        aliases = { "jump brainrot" },
+        aliases = { "jump brainrot", "brainrot jumping" },
         source = "jump-brainrot.lua",
         placeIds = { 88829149289682 },
         signatures = {

@@ -4,7 +4,7 @@ local games = {
     {
         key = "ban-or-be-banned",
         title = "Ban or Be Banned",
-        aliases = { "ban or be banned" },
+        aliases = { "ban or be banned", "ban or get banned" },
         source = "ban-or-be-banned.lua",
         placeIds = { 96017656548489 },
         signatures = {
@@ -33,7 +33,7 @@ local games = {
     {
         key = "jump-brainrot",
         title = "Jump Brainrot",
-        aliases = { "jump brainrot" },
+        aliases = { "jump brainrot", "brainrot jumping" },
         source = "jump-brainrot.lua",
         placeIds = { 88829149289682 },
         signatures = {
@@ -136,6 +136,11 @@ local function getExperienceName()
         return productInfo.Name
     end
 
+    local gameName = rawget(game, "Name") or game.Name
+    if type(gameName) == "string" and gameName ~= "" then
+        return gameName
+    end
+
     return nil
 end
 
@@ -143,6 +148,14 @@ local function detectGame()
     local byPlaceId = findByPlaceId(game.PlaceId)
     if byPlaceId then
         return byPlaceId, "placeId"
+    end
+
+    local gameId = rawget(game, "GameId") or game.GameId
+    if type(gameId) == "number" and gameId ~= 0 and gameId ~= game.PlaceId then
+        local byGameId = findByPlaceId(gameId)
+        if byGameId then
+            return byGameId, "gameId"
+        end
     end
 
     local byName = findByName(getExperienceName())
@@ -273,7 +286,7 @@ end
 local function run()
     local entry, reason = detectGame()
     if not entry then
-        warn("[Mango Hub] Unsupported game. Current PlaceId: " .. tostring(game.PlaceId))
+        warn("[Mango Hub] Unsupported game. Current PlaceId: " .. tostring(game.PlaceId) .. " | GameId: " .. tostring(game.GameId) .. " | Name: " .. tostring(game.Name))
         return false
     end
 
