@@ -286,7 +286,7 @@ end
 local function run()
     local entry, reason = detectGame()
     if not entry then
-        warn("[Mango Hub] Unsupported game. Current PlaceId: " .. tostring(game.PlaceId) .. " | GameId: " .. tostring(game.GameId) .. " | Name: " .. tostring(game.Name))
+        warn("[Mango Hub] Unsupported game. GameId: " .. tostring(game.GameId))
         return false
     end
 
