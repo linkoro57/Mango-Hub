@@ -1,11 +1,135 @@
-local HubManifest = require(script.Parent:WaitForChild("hub-manifest"))
+local RAW_BASE_URL = "https://raw.githubusercontent.com/linkoro57/Mango-Hub/refs/heads/main/"
 
-local Loader = {}
+local games = {
+    {
+        key = "ban-or-be-banned",
+        title = "Ban or Be Banned",
+        aliases = { "ban or be banned" },
+        source = "ban-or-be-banned.lua",
+        placeIds = {},
+        signatures = {
+            workspace = { "Decoration" },
+        },
+    },
+    {
+        key = "be-a-lucky-block",
+        title = "Be a Lucky Block",
+        aliases = { "be a lucky block" },
+        source = "be-a-lucky-block.lua",
+        placeIds = {},
+        signatures = {
+            workspace = { "CollectZones", "RunningModels", "Plots" },
+            replicatedStorage = { "BrainrotModels" },
+        },
+    },
+    {
+        key = "flex-your-fps-and-your-ping",
+        title = "Flex Your FPS and Your Ping",
+        aliases = { "flex your fps and your ping" },
+        source = "flex-your-fps-and-your-ping.lua",
+        placeIds = {},
+        signatures = {},
+    },
+    {
+        key = "jump-brainrot",
+        title = "Jump Brainrot",
+        aliases = { "jump brainrot" },
+        source = "jump-brainrot.lua",
+        placeIds = {},
+        signatures = {
+            replicatedStorage = { "Events", "Remotes", "Modules" },
+        },
+    },
+    {
+        key = "sell-lemons",
+        title = "Sell Lemons",
+        aliases = { "sell lemons" },
+        source = "sell-lemons.lua",
+        placeIds = {},
+        signatures = {},
+    },
+}
+
+local function normalizeName(value)
+    return tostring(value or "")
+        :lower()
+        :gsub("[%p%c]", " ")
+        :gsub("%s+", " ")
+        :gsub("^%s+", "")
+        :gsub("%s+$", "")
+end
+
+local function containsPlaceId(entry, placeId)
+    for _, candidate in ipairs(entry.placeIds or {}) do
+        if candidate == placeId then
+            return true
+        end
+    end
+    return false
+end
+
+local function findByPlaceId(placeId)
+    for _, entry in ipairs(games) do
+        if containsPlaceId(entry, placeId) then
+            return entry
+        end
+    end
+    return nil
+end
+
+local function findByName(name)
+    local normalized = normalizeName(name)
+    if normalized == "" then
+        return nil
+    end
+
+    for _, entry in ipairs(games) do
+        if normalizeName(entry.title) == normalized then
+            return entry
+        end
+
+        for _, alias in ipairs(entry.aliases or {}) do
+            if normalizeName(alias) == normalized then
+                return entry
+            end
+        end
+    end
+
+    return nil
+end
+
+local function countChildren(parent, names)
+    if not parent or type(names) ~= "table" then
+        return 0, 0
+    end
+
+    local total = #names
+    local found = 0
+    for _, name in ipairs(names) do
+        if parent:FindFirstChild(name) then
+            found = found + 1
+        end
+    end
+    return found, total
+end
+
+local function matchScore(entry)
+    local signatures = entry.signatures or {}
+    local replicatedStorage = game:GetService("ReplicatedStorage")
+    local workspaceFound, workspaceTotal = countChildren(workspace, signatures.workspace)
+    local replicatedFound, replicatedTotal = countChildren(replicatedStorage, signatures.replicatedStorage)
+    local total = workspaceTotal + replicatedTotal
+
+    if total == 0 then
+        return 0
+    end
+
+    return (workspaceFound + replicatedFound) / total
+end
 
 local function getExperienceName()
-    local marketplaceService = game:GetService("MarketplaceService")
     local ok, productInfo = pcall(function()
-        return marketplaceService:GetProductInfo(game.PlaceId)
+        return game:GetService("MarketplaceService"):GetProductInfo(game.PlaceId)
     end)
 
     if ok and type(productInfo) == "table" then
@@ -15,29 +139,118 @@ local function getExperienceName()
     return nil
 end
 
-local function getContext()
-    return {
-        placeId = game.PlaceId,
-        experienceName = getExperienceName(),
-        workspace = workspace,
-        replicatedStorage = game:GetService("ReplicatedStorage"),
-    }
+local function detectGame()
+    local byPlaceId = findByPlaceId(game.PlaceId)
+    if byPlaceId then
+        return byPlaceId, "placeId"
+    end
+
+    local byName = findByName(getExperienceName())
+    if byName then
+        return byName, "experienceName"
+    end
+
+    local bestEntry
+    local bestScore = 0
+    for _, entry in ipairs(games) do
+        local score = matchScore(entry)
+        if score > bestScore then
+            bestEntry = entry
+            bestScore = score
+        end
+    end
+
+    if bestEntry and bestScore >= 0.67 then
+        return bestEntry, "signature"
+    end
+
+    return nil, "none"
 end
 
-local function resolveScript(entry)
-    local folder = script.Parent:FindFirstChild("scripts") or script.Parent
+local function getLoader()
+    if type(loadstring) == "function" then
+        return loadstring
+    end
+    if type(load) == "function" then
+        return load
+    end
+    return nil
+end
+
+local function httpGet(url)
+    local ok, result = pcall(function()
+        return game:HttpGet(url, true)
+    end)
+
+    if ok and type(result) == "string" and result ~= "" then
+        return true, result
+    end
+
+    return false, result
+end
+
+local function runRemote(entry)
+    local loader = getLoader()
+    if type(loader) ~= "function" then
+        warn("[Mango Hub] loadstring/load is not available.")
+        return false
+    end
+
+    local url = RAW_BASE_URL .. entry.source
+    local fetchOk, source = httpGet(url)
+    if not fetchOk or type(source) ~= "string" or source == "" then
+        warn("[Mango Hub] Failed to fetch " .. entry.source .. ": " .. tostring(source))
+        return false
+    end
+
+    local chunk, compileErr = loader(source)
+    if type(chunk) ~= "function" then
+        warn("[Mango Hub] Failed to compile " .. entry.source .. ": " .. tostring(compileErr))
+        return false
+    end
+
+    local runOk, runErr = xpcall(chunk, function(message)
+        if type(debug) == "table" and type(debug.traceback) == "function" then
+            return debug.traceback(tostring(message), 2)
+        end
+        return tostring(message)
+    end)
+
+    if not runOk then
+        warn("[Mango Hub] Failed to run " .. entry.source .. ": " .. tostring(runErr))
+        return false
+    end
+
+    return true
+end
+
+local function runLocal(entry)
+    local scriptObject = rawget(getfenv and getfenv() or _G, "script") or script
+    if type(scriptObject) ~= "userdata" and type(scriptObject) ~= "table" then
+        return nil
+    end
+
+    local ok, parent = pcall(function()
+        return scriptObject.Parent
+    end)
+
+    if not ok then
+        return nil
+    end
+
+    if not parent then
+        return nil
+    end
+
+    local folder = parent:FindFirstChild("scripts") or parent
     local module = folder:FindFirstChild(entry.key)
         or folder:FindFirstChild(entry.source)
         or folder:FindFirstChild(entry.title)
 
     if not module then
-        return nil, ("script not found for %s"):format(entry.title)
+        return nil
     end
 
-    return module
-end
-
-local function runScript(module)
     if module:IsA("ModuleScript") then
         local loaded = require(module)
         if type(loaded) == "function" then
@@ -46,7 +259,7 @@ local function runScript(module)
         if type(loaded) == "table" and type(loaded.run) == "function" then
             return loaded.run()
         end
-        return loaded
+        return loaded ~= false
     end
 
     if module:IsA("LocalScript") then
@@ -54,53 +267,26 @@ local function runScript(module)
         return true
     end
 
-    return nil, ("unsupported script type %s"):format(module.ClassName)
+    return nil
 end
 
-function Loader.resolve()
-    local entry, reason = HubManifest.detect(getContext())
+local function run()
+    local entry, reason = detectGame()
     if not entry then
-        return nil, reason
-    end
-    return entry, reason
-end
-
-function Loader.run()
-    local entry, reason = Loader.resolve()
-    if not entry then
-        warn("[Mango Hub] Unsupported game. Add this PlaceId to hub-manifest.lua: " .. tostring(game.PlaceId))
+        warn("[Mango Hub] Unsupported game. Current PlaceId: " .. tostring(game.PlaceId))
         return false
     end
 
     rawset(_G, "__MangoHubReloadCallback", function()
-        Loader.run()
+        run()
     end)
 
-    local module, resolveErr = resolveScript(entry)
-    if not module then
-        warn("[Mango Hub] " .. resolveErr)
-        return false
+    local localResult = runLocal(entry)
+    if localResult ~= nil then
+        return localResult
     end
 
-    local ok, result = xpcall(function()
-        local runResult, runErr = runScript(module)
-        if runResult == nil and runErr then
-            error(runErr)
-        end
-        return runResult
-    end, function(message)
-        if type(debug) == "table" and type(debug.traceback) == "function" then
-            return debug.traceback(tostring(message), 2)
-        end
-        return tostring(message)
-    end)
-
-    if not ok then
-        warn(("[Mango Hub] Failed to launch %s via %s: %s"):format(entry.title, reason, tostring(result)))
-        return false
-    end
-
-    return result ~= false
+    return runRemote(entry, reason)
 end
 
-return Loader
+return run()
