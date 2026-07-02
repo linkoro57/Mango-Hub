@@ -6,7 +6,7 @@ local games = {
         title = "Ban or Be Banned",
         aliases = { "ban or be banned" },
         source = "ban-or-be-banned.lua",
-        placeIds = {},
+        placeIds = { 96017656548489 },
         signatures = {
             workspace = { "Decoration" },
         },
@@ -16,7 +16,7 @@ local games = {
         title = "Be a Lucky Block",
         aliases = { "be a lucky block" },
         source = "be-a-lucky-block.lua",
-        placeIds = {},
+        placeIds = { 124473577469410 },
         signatures = {
             workspace = { "CollectZones", "RunningModels", "Plots" },
             replicatedStorage = { "BrainrotModels" },
@@ -27,7 +27,7 @@ local games = {
         title = "Flex Your FPS and Your Ping",
         aliases = { "flex your fps and your ping" },
         source = "flex-your-fps-and-your-ping.lua",
-        placeIds = {},
+        placeIds = { 18667984660 },
         signatures = {},
     },
     {
@@ -35,7 +35,7 @@ local games = {
         title = "Jump Brainrot",
         aliases = { "jump brainrot" },
         source = "jump-brainrot.lua",
-        placeIds = {},
+        placeIds = { 88829149289682 },
         signatures = {
             replicatedStorage = { "Events", "Remotes", "Modules" },
         },
@@ -45,7 +45,7 @@ local games = {
         title = "Sell Lemons",
         aliases = { "sell lemons" },
         source = "sell-lemons.lua",
-        placeIds = {},
+        placeIds = { 79268393072444 },
         signatures = {},
     },
 }
