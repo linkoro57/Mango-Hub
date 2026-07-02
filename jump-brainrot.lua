@@ -97,7 +97,7 @@ end
 local uiSuccess, uiErr = pcall(function()
     local factory = rawget(_G, "__MangoHubUIFactory")
     if not factory then
-        factory, uiErr = loadRemoteModule("https://raw.githubusercontent.com/linkoro57/Mango-Hub/refs/heads/main/mango-ui.lua", "MangoUI")
+        factory, uiErr = loadRemoteModule("https://raw.githubusercontent.com/linkoro57/Mango-Hub/main/mango-ui.lua", "MangoUI")
     end
     if not factory then
         error(uiErr)

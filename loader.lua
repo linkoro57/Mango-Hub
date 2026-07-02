@@ -1,4 +1,4 @@
-local RAW_BASE_URL = "https://raw.githubusercontent.com/linkoro57/Mango-Hub/refs/heads/main/"
+local RAW_BASE_URL = "https://raw.githubusercontent.com/linkoro57/Mango-Hub/main/"
 
 local games = {
     {
@@ -197,6 +197,29 @@ local function httpGet(url)
 
     if ok and type(result) == "string" and result ~= "" then
         return true, result
+    end
+
+    local synTable = rawget(_G, "syn")
+    local fluxusTable = rawget(_G, "fluxus")
+    local requestImpl = rawget(_G, "request")
+        or rawget(_G, "http_request")
+        or rawget(_G, "http")
+        or rawget(_G, "requestfunc")
+        or (type(synTable) == "table" and synTable.request)
+        or (type(fluxusTable) == "table" and fluxusTable.request)
+
+    if type(requestImpl) == "function" then
+        local requestOk, response = pcall(requestImpl, {
+            Url = url,
+            Method = "GET",
+        })
+
+        if requestOk and type(response) == "table" then
+            local body = response.Body or response.body
+            if type(body) == "string" and body ~= "" then
+                return true, body
+            end
+        end
     end
 
     return false, result
