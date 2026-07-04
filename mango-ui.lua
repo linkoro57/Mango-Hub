@@ -456,6 +456,19 @@ function MangoUI:CreateWindow(config)
     subtitle.Text = tostring(config.SubTitle or "")
     subtitle.Parent = bar
 
+    local dragHandle = Instance.new("TextButton")
+    dragHandle.Name = "DragHandle"
+    dragHandle.AutoButtonColor = false
+    dragHandle.Text = ""
+    dragHandle.BackgroundTransparency = 1
+    dragHandle.BorderSizePixel = 0
+    dragHandle.Active = true
+    dragHandle.Selectable = false
+    dragHandle.Position = UDim2.new(0, 0, 0, 0)
+    dragHandle.Size = UDim2.new(1, isMobile and -(buttonSize * 3 + 36) or -(buttonSize * 3 + 44), 1, 0)
+    dragHandle.ZIndex = 3
+    dragHandle.Parent = bar
+
     local function makeBarButton(text, xOffset, color)
         local button = Instance.new("TextButton")
         button.Size = UDim2.new(0, buttonSize, 0, buttonSize)
@@ -654,11 +667,12 @@ function MangoUI:CreateWindow(config)
         clampWindowPosition()
     end
 
-    bar.InputBegan:Connect(function(input)
+    dragHandle.InputBegan:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
             dragging = true
             dragStart = input.Position
             startPos = main.Position
+            dragInput = input
 
             input.Changed:Connect(function()
                 if input.UserInputState == Enum.UserInputState.End then
@@ -668,13 +682,13 @@ function MangoUI:CreateWindow(config)
             end)
         end
     end)
-    bar.InputChanged:Connect(function(input)
+    dragHandle.InputChanged:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
             dragInput = input
         end
     end)
     UserInputService.InputChanged:Connect(function(input)
-        if dragging and input == dragInput then
+        if dragging and (input == dragInput or (dragInput and dragInput.UserInputType == Enum.UserInputType.Touch and input.UserInputType == Enum.UserInputType.Touch)) then
             updateDrag(input)
         end
     end)
