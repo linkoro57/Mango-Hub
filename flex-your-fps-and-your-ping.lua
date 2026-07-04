@@ -1,20 +1,61 @@
--- Fluent UI Setup
 local Fluent, SaveManager, InterfaceManager
 
-local function loadRemoteModule(url, label)
-    if type(loadstring) ~= "function" then
-        return nil, "loadstring is not available"
+local function getLoader()
+    if type(loadstring) == "function" then
+        return loadstring
     end
+    if type(load) == "function" then
+        return load
+    end
+    return nil
+end
 
-    local fetchOk, source = pcall(function()
+local function httpGet(url)
+    local ok, result = pcall(function()
         return game:HttpGet(url, true)
     end)
+    if ok and type(result) == "string" and result ~= "" then
+        return true, result
+    end
 
+    local synTable = rawget(_G, "syn")
+    local fluxusTable = rawget(_G, "fluxus")
+    local requestImpl = rawget(_G, "request")
+        or rawget(_G, "http_request")
+        or rawget(_G, "http")
+        or rawget(_G, "requestfunc")
+        or (type(synTable) == "table" and synTable.request)
+        or (type(fluxusTable) == "table" and fluxusTable.request)
+
+    if type(requestImpl) ~= "function" then
+        return false, result
+    end
+
+    local requestOk, response = pcall(requestImpl, {
+        Url = url,
+        Method = "GET",
+    })
+
+    if not requestOk or type(response) ~= "table" then
+        return false, response
+    end
+
+    local body = response.Body or response.body
+    return type(body) == "string" and body ~= "", body or response.StatusMessage or "empty response"
+end
+
+local function loadRemoteModule(url, label)
+    local loader = getLoader()
+    if type(loader) ~= "function" then
+        return nil, "loadstring/load is not available"
+    end
+
+    local fetchOk, source = httpGet(url)
     if not fetchOk or type(source) ~= "string" or source == "" then
         return nil, "download failed: " .. tostring(source)
     end
 
-    local chunk, compileErr = loadstring(source)
+    local chunk, compileErr = loader(source)
     if type(chunk) ~= "function" then
         return nil, "compile failed: " .. tostring(compileErr)
     end
@@ -32,18 +73,19 @@ local function loadRemoteModule(url, label)
 end
 
 local success, err = pcall(function()
-    Fluent, err = loadRemoteModule("https://github.com/dawid-scripts/Fluent/releases/latest/download/main.lua", "Fluent")
-    if not Fluent then error(err) end
+    local factory = rawget(_G, "__MangoHubUIFactory")
+    if not factory then
+        factory, err = loadRemoteModule("https://raw.githubusercontent.com/linkoro57/Mango-Hub/main/mango-ui.lua", "MangoUI")
+    end
+    if not factory then error(err) end
 
-    SaveManager, err = loadRemoteModule("https://raw.githubusercontent.com/dawid-scripts/Fluent/master/Addons/SaveManager.lua", "SaveManager")
-    if not SaveManager then error(err) end
-
-    InterfaceManager, err = loadRemoteModule("https://raw.githubusercontent.com/dawid-scripts/Fluent/master/Addons/InterfaceManager.lua", "InterfaceManager")
-    if not InterfaceManager then error(err) end
+    Fluent = factory.Fluent
+    SaveManager = factory.SaveManager
+    InterfaceManager = factory.InterfaceManager
 end)
 
 if not success or not Fluent then
-    warn("[Mango Hub] Failed to load Fluent UI: " .. tostring(err))
+    warn("[Mango Hub] Failed to load Mango UI: " .. tostring(err))
     return
 end
 
