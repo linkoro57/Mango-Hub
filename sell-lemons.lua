@@ -156,7 +156,6 @@ local state = {
     AutoAscend = false,
     AutoOrchardHarvest = false,
     AutoOrchardSell = false,
-    AutoSewerExits = false,
     AutoSewerCashVine = false,
     AntiAFK = false,
     SpeedOn = false,
@@ -186,7 +185,6 @@ local status = {
 local orchardPlotCache = {}
 local sewerPromptCache = {
     levers = {},
-    exits = {},
     cash = {},
 }
 
@@ -343,14 +341,12 @@ local function anyAutomationEnabled()
         or state.AutoAscend
         or state.AutoOrchardHarvest
         or state.AutoOrchardSell
-        or state.AutoSewerExits
         or state.AutoSewerCashVine
 end
 
 local function anySidegameEnabled()
     return state.AutoOrchardHarvest
         or state.AutoOrchardSell
-        or state.AutoSewerExits
         or state.AutoSewerCashVine
 end
 
@@ -391,14 +387,13 @@ end
 
 local function refreshSewerPrompts()
     local now = os.clock()
-    if now < sewerRefreshAt and (#sewerPromptCache.levers + #sewerPromptCache.exits + #sewerPromptCache.cash) > 0 then
+    if now < sewerRefreshAt and (#sewerPromptCache.levers + #sewerPromptCache.cash) > 0 then
         return
     end
 
     sewerRefreshAt = now + 5
     sewerPromptCache = {
         levers = {},
-        exits = {},
         cash = {},
     }
 
@@ -412,8 +407,6 @@ local function refreshSewerPrompts()
             local fullName = descendant:GetFullName()
             if descendant.Name == "PullPrompt" then
                 table.insert(sewerPromptCache.levers, descendant)
-            elseif descendant.Name == "ExitPrompt" then
-                table.insert(sewerPromptCache.exits, descendant)
             elseif fullName:find("CashVine") then
                 table.insert(sewerPromptCache.cash, descendant)
             end
@@ -1051,10 +1044,6 @@ local function startLogicLoop()
                             doOrchardSell(tycoon)
                             table.insert(actions, "sellfruit")
                         end
-                        if state.AutoSewerExits then
-                            doSewerPrompts(sewerPromptCache.exits, 0.75)
-                            table.insert(actions, "exits")
-                        end
                         if state.AutoSewerCashVine then
                             doSewerPrompts(sewerPromptCache.cash, 1)
                             table.insert(actions, "vine")
@@ -1251,14 +1240,6 @@ local function buildFluentGui()
             teleportToSewerLever("Red")
         end
     })
-
-    Tabs.Sidegame:AddToggle("AutoSewerExitsToggle", {
-        Title = "Auto Sewer Exits",
-        Description = "Uses sewer exit prompts automatically.",
-        Default = false
-    }):OnChanged(function(value)
-        state.AutoSewerExits = value
-    end)
 
     Tabs.Sidegame:AddToggle("AutoSewerCashVineToggle", {
         Title = "Auto Cash Vine",
