@@ -459,15 +459,24 @@ function MangoUI:CreateWindow(config)
     local dragHandle = Instance.new("TextButton")
     dragHandle.Name = "DragHandle"
     dragHandle.AutoButtonColor = false
-    dragHandle.Text = ""
-    dragHandle.BackgroundTransparency = 1
+    dragHandle.Text = isMobile and "Drag" or ""
+    dragHandle.BackgroundTransparency = isMobile and 0.08 or 1
+    dragHandle.BackgroundColor3 = colors.bg3
     dragHandle.BorderSizePixel = 0
     dragHandle.Active = true
     dragHandle.Selectable = false
-    dragHandle.Position = UDim2.new(0, 0, 0, 0)
-    dragHandle.Size = UDim2.new(1, isMobile and -(buttonSize * 3 + 36) or -(buttonSize * 3 + 44), 1, 0)
-    dragHandle.ZIndex = 3
+    dragHandle.Font = Enum.Font.GothamBold
+    dragHandle.TextSize = isMobile and 12 or 1
+    dragHandle.TextColor3 = colors.sub
+    dragHandle.Position = isMobile and UDim2.new(0.5, 0, 0, 4) or UDim2.new(0, 0, 0, 0)
+    dragHandle.AnchorPoint = isMobile and Vector2.new(0.5, 0) or Vector2.new(0, 0)
+    dragHandle.Size = isMobile and UDim2.new(0, 120, 0, 18) or UDim2.new(1, -(buttonSize * 3 + 44), 1, 0)
+    dragHandle.ZIndex = 5
     dragHandle.Parent = bar
+    corner(dragHandle, 9)
+    if isMobile then
+        stroke(dragHandle, 0.8)
+    end
 
     local function makeBarButton(text, xOffset, color)
         local button = Instance.new("TextButton")
@@ -660,7 +669,7 @@ function MangoUI:CreateWindow(config)
         main.Position = UDim2.new(0, math.floor(offsetX), 0, math.floor(offsetY))
     end
 
-    local dragging, dragStart, startPos, dragInput
+    local dragging, dragStart, startPos, dragInput, dragInputType
     local function updateDrag(input)
         local delta = input.Position - dragStart
         main.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
@@ -673,22 +682,24 @@ function MangoUI:CreateWindow(config)
             dragStart = input.Position
             startPos = main.Position
             dragInput = input
+            dragInputType = input.UserInputType
 
             input.Changed:Connect(function()
                 if input.UserInputState == Enum.UserInputState.End then
                     dragging = false
                     dragInput = nil
+                    dragInputType = nil
                 end
             end)
         end
     end)
     dragHandle.InputChanged:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+        if input.UserInputType == Enum.UserInputType.MouseMovement then
             dragInput = input
         end
     end)
     UserInputService.InputChanged:Connect(function(input)
-        if dragging and (input == dragInput or (dragInput and dragInput.UserInputType == Enum.UserInputType.Touch and input.UserInputType == Enum.UserInputType.Touch)) then
+        if dragging and dragInputType == Enum.UserInputType.MouseButton1 and input == dragInput then
             updateDrag(input)
         end
     end)
@@ -696,6 +707,20 @@ function MangoUI:CreateWindow(config)
         if dragging and input == dragInput then
             dragging = false
             dragInput = nil
+            dragInputType = nil
+        end
+    end)
+    RunService.RenderStepped:Connect(function()
+        if dragging and dragInputType == Enum.UserInputType.Touch then
+            local touches = UserInputService:GetTouches()
+            local touch = touches[1]
+            if touch then
+                updateDrag(touch)
+            else
+                dragging = false
+                dragInput = nil
+                dragInputType = nil
+            end
         end
     end)
 
