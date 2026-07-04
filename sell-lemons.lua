@@ -156,10 +156,8 @@ local state = {
     AutoAscend = false,
     AutoOrchardHarvest = false,
     AutoOrchardSell = false,
-    AutoSewerLevers = false,
     AutoSewerExits = false,
     AutoSewerCashVine = false,
-    AutoSewerAlien = false,
     AntiAFK = false,
     SpeedOn = false,
     SpeedVal = 16,
@@ -190,7 +188,6 @@ local sewerPromptCache = {
     levers = {},
     exits = {},
     cash = {},
-    alien = {},
 }
 
 local function getTycoon()
@@ -346,19 +343,15 @@ local function anyAutomationEnabled()
         or state.AutoAscend
         or state.AutoOrchardHarvest
         or state.AutoOrchardSell
-        or state.AutoSewerLevers
         or state.AutoSewerExits
         or state.AutoSewerCashVine
-        or state.AutoSewerAlien
 end
 
 local function anySidegameEnabled()
     return state.AutoOrchardHarvest
         or state.AutoOrchardSell
-        or state.AutoSewerLevers
         or state.AutoSewerExits
         or state.AutoSewerCashVine
-        or state.AutoSewerAlien
 end
 
 local function getLocalOrchard(tycoon)
@@ -398,7 +391,7 @@ end
 
 local function refreshSewerPrompts()
     local now = os.clock()
-    if now < sewerRefreshAt and (#sewerPromptCache.levers + #sewerPromptCache.exits + #sewerPromptCache.cash + #sewerPromptCache.alien) > 0 then
+    if now < sewerRefreshAt and (#sewerPromptCache.levers + #sewerPromptCache.exits + #sewerPromptCache.cash) > 0 then
         return
     end
 
@@ -407,7 +400,6 @@ local function refreshSewerPrompts()
         levers = {},
         exits = {},
         cash = {},
-        alien = {},
     }
 
     local sewer = workspace:FindFirstChild("Map") and workspace.Map:FindFirstChild("Sewer")
@@ -424,10 +416,23 @@ local function refreshSewerPrompts()
                 table.insert(sewerPromptCache.exits, descendant)
             elseif fullName:find("CashVine") then
                 table.insert(sewerPromptCache.cash, descendant)
-            elseif fullName:find("SewerAlien") then
-                table.insert(sewerPromptCache.alien, descendant)
             end
         end
+    end
+end
+
+local function teleportToSewerLever(colorName)
+    local hrp = getRootPart()
+    local sewer = workspace:FindFirstChild("Map") and workspace.Map:FindFirstChild("Sewer")
+    if not (hrp and sewer) then
+        return
+    end
+
+    local leverModel = sewer:FindFirstChild("Doors" .. colorName)
+    local lever = leverModel and leverModel:FindFirstChild("Lever (" .. colorName .. ")", true)
+    local root = lever and lever:FindFirstChild("Root")
+    if root and root:IsA("BasePart") then
+        hrp.CFrame = root.CFrame + Vector3.new(0, 4, 0)
     end
 end
 
@@ -1046,10 +1051,6 @@ local function startLogicLoop()
                             doOrchardSell(tycoon)
                             table.insert(actions, "sellfruit")
                         end
-                        if state.AutoSewerLevers then
-                            doSewerPrompts(sewerPromptCache.levers, 0.75)
-                            table.insert(actions, "levers")
-                        end
                         if state.AutoSewerExits then
                             doSewerPrompts(sewerPromptCache.exits, 0.75)
                             table.insert(actions, "exits")
@@ -1057,10 +1058,6 @@ local function startLogicLoop()
                         if state.AutoSewerCashVine then
                             doSewerPrompts(sewerPromptCache.cash, 1)
                             table.insert(actions, "vine")
-                        end
-                        if state.AutoSewerAlien then
-                            doSewerPrompts(sewerPromptCache.alien, 1)
-                            table.insert(actions, "alien")
                         end
                     end)
                 end
@@ -1223,16 +1220,37 @@ local function buildFluentGui()
 
     Tabs.Sidegame:AddSection("Sewer")
 
-    Tabs.Sidegame:AddToggle("AutoSewerLeversToggle", {
-        Title = "Auto Sewer Levers",
-        Description = "Pulls sewer levers automatically when prompts are available.",
-        Default = false
-    }):OnChanged(function(value)
-        state.AutoSewerLevers = value
-        if value then
-            refreshSewerPrompts()
+    Tabs.Sidegame:AddButton({
+        Title = "TP Lever Blue",
+        Description = "Teleports to the blue sewer lever.",
+        Callback = function()
+            teleportToSewerLever("Blue")
         end
-    end)
+    })
+
+    Tabs.Sidegame:AddButton({
+        Title = "TP Lever Green",
+        Description = "Teleports to the green sewer lever.",
+        Callback = function()
+            teleportToSewerLever("Green")
+        end
+    })
+
+    Tabs.Sidegame:AddButton({
+        Title = "TP Lever Purple",
+        Description = "Teleports to the purple sewer lever.",
+        Callback = function()
+            teleportToSewerLever("Purple")
+        end
+    })
+
+    Tabs.Sidegame:AddButton({
+        Title = "TP Lever Red",
+        Description = "Teleports to the red sewer lever.",
+        Callback = function()
+            teleportToSewerLever("Red")
+        end
+    })
 
     Tabs.Sidegame:AddToggle("AutoSewerExitsToggle", {
         Title = "Auto Sewer Exits",
@@ -1249,28 +1267,6 @@ local function buildFluentGui()
     }):OnChanged(function(value)
         state.AutoSewerCashVine = value
     end)
-
-    Tabs.Sidegame:AddToggle("AutoSewerAlienToggle", {
-        Title = "Auto Sewer Alien",
-        Description = "Interacts with the sewer alien prompts automatically.",
-        Default = false
-    }):OnChanged(function(value)
-        state.AutoSewerAlien = value
-    end)
-
-    Tabs.Sidegame:AddButton({
-        Title = "Teleport To Sewer",
-        Description = "Moves you near the sewer alien area.",
-        Callback = function()
-            local hrp = getRootPart()
-            local sewer = workspace:FindFirstChild("Map") and workspace.Map:FindFirstChild("Sewer")
-            local promptPart = sewer and sewer:FindFirstChild("SewerAlien", true)
-            local root = promptPart and promptPart:FindFirstChild("ListenPrompt")
-            if hrp and root and root:IsA("BasePart") then
-                hrp.CFrame = root.CFrame + Vector3.new(0, 4, 0)
-            end
-        end
-    })
 
     Tabs.Progression:AddToggle("AutoRebirthToggle", {
         Title = "Auto Rebirth",
