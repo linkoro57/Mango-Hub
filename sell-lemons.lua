@@ -118,6 +118,7 @@ local RunService = game:GetService("RunService")
 local Players = game:GetService("Players")
 local LP = Players.LocalPlayer
 local fireClickDetector = type(fireclickdetector) == "function" and fireclickdetector or nil
+local fireProximityPrompt = type(fireproximityprompt) == "function" and fireproximityprompt or nil
 
 local function req(path)
     local ok, module = pcall(require, path)
@@ -130,8 +131,12 @@ local ClientTycoonBalances = req(RS.Modules.Tycoon.Component.Client.ClientTycoon
 local ClientTycoonRebirth = req(RS.Modules.Tycoon.Component.Client.ClientTycoonRebirth)
 local ClientTycoonAscension = req(RS.Modules.Tycoon.Component.Client.ClientTycoonAscension)
 local ClientTycoonEvolution = req(RS.Modules.Tycoon.Component.Client.ClientTycoonEvolution)
+local ClientTycoonIncome = req(RS.Modules.Tycoon.Component.Client.ClientTycoonIncome)
 local ClientTycoonPowers = req(RS.Modules.Tycoon.Component.Client.ClientTycoonPowers)
 local ClientTycoonPhoneOffers = req(RS.Modules.Tycoon.Component.Client.ClientTycoonPhoneOffers)
+local Orchard = req(RS.Modules.Tycoon.Orchard.Orchard)
+local OrchardPlot = req(RS.Modules.Tycoon.Orchard.Client.ClientOrchardPlot)
+local OrchardFruits = req(RS.Modules.Tycoon.Orchard.Client.ClientOrchardFruits)
 local RemoteSignal = req(RS.Core.RemoteSignal)
 local RemoteRequest = req(RS.Core.RemoteRequest)
 local Entity = req(RS.Core.Entity)
@@ -149,6 +154,12 @@ local state = {
     AutoRebirth = false,
     AutoEvolve = false,
     AutoAscend = false,
+    AutoOrchardHarvest = false,
+    AutoOrchardSell = false,
+    AutoSewerLevers = false,
+    AutoSewerExits = false,
+    AutoSewerCashVine = false,
+    AutoSewerAlien = false,
     AntiAFK = false,
     SpeedOn = false,
     SpeedVal = 16,
@@ -158,9 +169,15 @@ local scriptAlive = true
 local cacheRoot, buyCache, earnerCache = nil, {}, {}
 local fruitCache, savedCFrame = {}, nil
 local powerRetryAt = {}
+local purchaseRetryAt = {}
+local earnerRetryAt = {}
+local wakeRetryAt = {}
+local sidegameRetryAt = {}
 local phoneCooldown = 0
 local cacheRefreshAt = 0
 local statsRefreshAt = 0
+local orchardRefreshAt = 0
+local sewerRefreshAt = 0
 local status = {
     cash = "--",
     investors = "--",
@@ -168,9 +185,21 @@ local status = {
     evolve = "--",
     actions = "idle",
 }
+local orchardPlotCache = {}
+local sewerPromptCache = {
+    levers = {},
+    exits = {},
+    cash = {},
+    alien = {},
+}
 
 local function getTycoon()
     return Tycoon and Tycoon.getLocal()
+end
+
+local function getRootPart()
+    local character = LP.Character
+    return character and character:FindFirstChild("HumanoidRootPart")
 end
 
 local function afford(price, current)
@@ -272,11 +301,11 @@ local function refreshCaches(tycoon)
     end
 
     local now = os.clock()
-    if cacheRoot == tycoon.Instance and #buyCache > 0 and now < cacheRefreshAt then
+    if cacheRoot == tycoon.Instance and (#buyCache > 0 or #earnerCache > 0) and now < cacheRefreshAt then
         return
     end
 
-    cacheRefreshAt = now + 2
+    cacheRefreshAt = now + 4
     cacheRoot, buyCache, earnerCache = tycoon.Instance, {}, {}
 
     for _, instance in CollectionService:GetTagged("Tycoon.Purchase") do
@@ -292,6 +321,18 @@ local function refreshCaches(tycoon)
     end
 end
 
+local function isPurchaseReady(instance)
+    return instance
+        and instance.Parent
+        and instance:GetAttribute("Shown")
+        and not instance:GetAttribute("Purchased")
+        and instance:GetAttribute("Enabled") ~= false
+end
+
+local function isEarnerReady(instance)
+    return instance and instance.Parent and instance:GetAttribute("Enabled") ~= false
+end
+
 local function anyAutomationEnabled()
     return state.AutoBuy
         or state.AutoUpgradeEarners
@@ -303,6 +344,184 @@ local function anyAutomationEnabled()
         or state.AutoRebirth
         or state.AutoEvolve
         or state.AutoAscend
+        or state.AutoOrchardHarvest
+        or state.AutoOrchardSell
+        or state.AutoSewerLevers
+        or state.AutoSewerExits
+        or state.AutoSewerCashVine
+        or state.AutoSewerAlien
+end
+
+local function anySidegameEnabled()
+    return state.AutoOrchardHarvest
+        or state.AutoOrchardSell
+        or state.AutoSewerLevers
+        or state.AutoSewerExits
+        or state.AutoSewerCashVine
+        or state.AutoSewerAlien
+end
+
+local function getLocalOrchard(tycoon)
+    if not (tycoon and Orchard and Orchard.getFromTycoon) then
+        return nil
+    end
+
+    local ok, orchard = pcall(function()
+        return Orchard.getFromTycoon(tycoon)
+    end)
+    return ok and orchard or nil
+end
+
+local function refreshOrchardPlots(tycoon)
+    local orchard = getLocalOrchard(tycoon)
+    if not orchard or not orchard.Instance then
+        orchardPlotCache = {}
+        return nil
+    end
+
+    local now = os.clock()
+    if now < orchardRefreshAt and #orchardPlotCache > 0 then
+        return orchard
+    end
+
+    orchardRefreshAt = now + 3
+    orchardPlotCache = {}
+
+    for _, instance in CollectionService:GetTagged("Tycoon.OrchardPlot") do
+        if instance:IsDescendantOf(orchard.Instance) then
+            table.insert(orchardPlotCache, instance)
+        end
+    end
+
+    return orchard
+end
+
+local function refreshSewerPrompts()
+    local now = os.clock()
+    if now < sewerRefreshAt and (#sewerPromptCache.levers + #sewerPromptCache.exits + #sewerPromptCache.cash + #sewerPromptCache.alien) > 0 then
+        return
+    end
+
+    sewerRefreshAt = now + 5
+    sewerPromptCache = {
+        levers = {},
+        exits = {},
+        cash = {},
+        alien = {},
+    }
+
+    local sewer = workspace:FindFirstChild("Map") and workspace.Map:FindFirstChild("Sewer")
+    if not sewer then
+        return
+    end
+
+    for _, descendant in sewer:GetDescendants() do
+        if descendant:IsA("ProximityPrompt") then
+            local fullName = descendant:GetFullName()
+            if descendant.Name == "PullPrompt" then
+                table.insert(sewerPromptCache.levers, descendant)
+            elseif descendant.Name == "ExitPrompt" then
+                table.insert(sewerPromptCache.exits, descendant)
+            elseif fullName:find("CashVine") then
+                table.insert(sewerPromptCache.cash, descendant)
+            elseif fullName:find("SewerAlien") then
+                table.insert(sewerPromptCache.alien, descendant)
+            end
+        end
+    end
+end
+
+local function triggerPrompt(prompt, cooldown)
+    if not (prompt and prompt.Parent and fireProximityPrompt) then
+        return false
+    end
+    if prompt.Enabled == false or prompt:GetAttribute("Disabled") == true then
+        return false
+    end
+
+    local now = os.clock()
+    if (sidegameRetryAt[prompt] or 0) > now then
+        return false
+    end
+
+    local ok = pcall(function()
+        fireProximityPrompt(prompt)
+    end)
+    sidegameRetryAt[prompt] = now + (ok and (cooldown or 0.5) or 2)
+    return ok
+end
+
+local function doOrchardHarvest(tycoon)
+    if not OrchardPlot then
+        return
+    end
+
+    refreshOrchardPlots(tycoon)
+    local readyState = OrchardPlot.States and OrchardPlot.States.FruitReady
+    if not readyState then
+        return
+    end
+
+    for _, instance in orchardPlotCache do
+        if not state.AutoOrchardHarvest then
+            return
+        end
+
+        local plot = OrchardPlot.getUnsafe and OrchardPlot.getUnsafe(instance)
+        if plot and plot:GetState() == readyState then
+            local key = "orchard-harvest:" .. tostring(instance:GetDebugId())
+            local now = os.clock()
+            if (sidegameRetryAt[key] or 0) <= now then
+                local okHarvest = pcall(function()
+                    plot:HarvestAsync()
+                end)
+                sidegameRetryAt[key] = now + (okHarvest and 0.25 or 1.5)
+            end
+        end
+    end
+end
+
+local function doOrchardSell(tycoon)
+    local orchard = getLocalOrchard(tycoon)
+    if not orchard or not OrchardFruits then
+        return
+    end
+
+    local fruits = orchard:GetComponent(OrchardFruits)
+    if not fruits then
+        return
+    end
+
+    local payload = {}
+    local total = 0
+    for _, entry in ipairs(fruits:GetAll()) do
+        if entry.Fruit and type(entry.Count) == "number" and entry.Count > 0 then
+            payload[entry.Fruit] = entry.Count
+            total = total + entry.Count
+        end
+    end
+
+    if total <= 0 then
+        return
+    end
+
+    local now = os.clock()
+    if (sidegameRetryAt.orchardSell or 0) > now then
+        return
+    end
+
+    local okSell = pcall(function()
+        fruits:SellFruitsAsync(payload)
+    end)
+    sidegameRetryAt.orchardSell = now + (okSell and 1 or 3)
+end
+
+local function doSewerPrompts(list, cooldown)
+    for _, prompt in ipairs(list) do
+        if triggerPrompt(prompt, cooldown) then
+            task.wait(0.05)
+        end
+    end
 end
 
 local function updateStatusSnapshot(tycoon)
@@ -346,24 +565,39 @@ local function doAutoBuy(tycoon)
         return
     end
 
+    local now = os.clock()
+    local cash = balances:GetCash()
+
     for _, instance in buyCache do
         if not state.AutoBuy then
             return
         end
 
-        if instance:GetAttribute("Shown") and not instance:GetAttribute("Purchased") then
+        if (purchaseRetryAt[instance] or 0) > now then
+            continue
+        end
+
+        if isPurchaseReady(instance) then
             local entity = Entity.getUnsafe(instance)
             if entity then
                 local okPrice, price = pcall(function()
                     return entity:GetPrice()
                 end)
 
-                if okPrice and afford(price, balances:GetCash()) then
-                    pcall(function()
+                if okPrice and price and afford(price, cash) then
+                    local okPurchase = pcall(function()
                         entity:TryPurchaseAsync(false)
                     end)
+                    purchaseRetryAt[instance] = okPurchase and (now + 0.15) or (now + 2)
+                    if okPurchase then
+                        cash = balances:GetCash()
+                    end
+                else
+                    purchaseRetryAt[instance] = now + (okPrice and 0.35 or 1.5)
                 end
             end
+        else
+            purchaseRetryAt[instance] = nil
         end
     end
 end
@@ -374,9 +608,21 @@ local function doUpgradeEarners(tycoon)
         return
     end
 
+    local now = os.clock()
+    local cash = balances:GetCash()
+
     for _, instance in earnerCache do
         if not state.AutoUpgradeEarners then
             return
+        end
+
+        if (earnerRetryAt[instance] or 0) > now then
+            continue
+        end
+
+        if not isEarnerReady(instance) then
+            earnerRetryAt[instance] = nil
+            continue
         end
 
         local entity = Entity.getUnsafe(instance)
@@ -387,14 +633,22 @@ local function doUpgradeEarners(tycoon)
 
             if okLevel then
                 local okUpgrade, _, count = pcall(function()
-                    return entity:GetUpgradePrice(level, math.huge, balances:GetCash())
+                    return entity:GetUpgradePrice(level, math.huge, cash)
                 end)
 
                 if okUpgrade and count and count > 0 then
-                    pcall(function()
+                    local okApply = pcall(function()
                         entity:UpgradeAsync(count)
                     end)
+                    earnerRetryAt[instance] = okApply and (now + 0.2) or (now + 2)
+                    if okApply then
+                        cash = balances:GetCash()
+                    end
+                else
+                    earnerRetryAt[instance] = now + 0.6
                 end
+            else
+                earnerRetryAt[instance] = now + 1.5
             end
         end
     end
@@ -450,17 +704,44 @@ local function doUpgradePowers(tycoon)
     end
 end
 
-local function doWake()
+local function doWake(tycoon)
+    local income = tycoon:GetComponent(ClientTycoonIncome)
+    if not income then
+        return
+    end
+
+    local now = os.clock()
+
     for _, instance in earnerCache do
         if not state.AutoWake then
             return
         end
 
+        if (wakeRetryAt[instance] or 0) > now then
+            continue
+        end
+
+        if not isEarnerReady(instance) then
+            wakeRetryAt[instance] = nil
+            continue
+        end
+
         local entity = Entity.getUnsafe(instance)
-        if entity and entity.WakeAsync then
-            pcall(function()
-                entity:WakeAsync()
+        if entity and entity.WakeAsync and not income:IsStreamAutomatic(entity.Name) then
+            local okNext, nextEarn = pcall(function()
+                return entity:GetEstimatedNextEarnTime()
             end)
+
+            if okNext and nextEarn and nextEarn > 0 then
+                wakeRetryAt[instance] = now + math.min(nextEarn, 2)
+            else
+                local okWake = pcall(function()
+                entity:WakeAsync()
+                end)
+                wakeRetryAt[instance] = okWake and (now + 0.35) or (now + 2)
+            end
+        else
+            wakeRetryAt[instance] = now + 5
         end
     end
 end
@@ -716,6 +997,10 @@ local function startLogicLoop()
                     if state.AutoBuy or state.AutoUpgradeEarners or state.AutoWake then
                         refreshCaches(tycoon)
                     end
+                    if anySidegameEnabled() then
+                        refreshSewerPrompts()
+                        refreshOrchardPlots(tycoon)
+                    end
 
                     pcall(function()
                         if state.AutoBuy then
@@ -731,7 +1016,7 @@ local function startLogicLoop()
                             table.insert(actions, "pow")
                         end
                         if state.AutoWake then
-                            doWake()
+                            doWake(tycoon)
                             table.insert(actions, "wake")
                         end
                         if state.AutoPhone then
@@ -752,6 +1037,30 @@ local function startLogicLoop()
                         if state.AutoAscend then
                             tryAscend(tycoon)
                             table.insert(actions, "ascend")
+                        end
+                        if state.AutoOrchardHarvest then
+                            doOrchardHarvest(tycoon)
+                            table.insert(actions, "orchard")
+                        end
+                        if state.AutoOrchardSell then
+                            doOrchardSell(tycoon)
+                            table.insert(actions, "sellfruit")
+                        end
+                        if state.AutoSewerLevers then
+                            doSewerPrompts(sewerPromptCache.levers, 0.75)
+                            table.insert(actions, "levers")
+                        end
+                        if state.AutoSewerExits then
+                            doSewerPrompts(sewerPromptCache.exits, 0.75)
+                            table.insert(actions, "exits")
+                        end
+                        if state.AutoSewerCashVine then
+                            doSewerPrompts(sewerPromptCache.cash, 1)
+                            table.insert(actions, "vine")
+                        end
+                        if state.AutoSewerAlien then
+                            doSewerPrompts(sewerPromptCache.alien, 1)
+                            table.insert(actions, "alien")
                         end
                     end)
                 end
@@ -790,6 +1099,7 @@ local function buildFluentGui()
 
     local Tabs = {
         Farm = Window:AddTab({ Title = "Farm", Icon = "bot" }),
+        Sidegame = Window:AddTab({ Title = "Sidegame", Icon = "map" }),
         Progression = Window:AddTab({ Title = "Progression", Icon = "trending-up" }),
         Utility = Window:AddTab({ Title = "Utility", Icon = "wrench" }),
         Stats = Window:AddTab({ Title = "Stats", Icon = "bar-chart-3" }),
@@ -872,6 +1182,95 @@ local function buildFluentGui()
     }):OnChanged(function(value)
         state.AutoPhone = value
     end)
+
+    Tabs.Sidegame:AddSection("Orchard")
+
+    Tabs.Sidegame:AddToggle("AutoOrchardHarvestToggle", {
+        Title = "Auto Harvest Orchard",
+        Description = "Harvests local orchard plots when fruit is ready.",
+        Default = false
+    }):OnChanged(function(value)
+        state.AutoOrchardHarvest = value
+        if value then
+            local tycoon = getTycoon()
+            if tycoon then
+                refreshOrchardPlots(tycoon)
+            end
+        end
+    end)
+
+    Tabs.Sidegame:AddToggle("AutoOrchardSellToggle", {
+        Title = "Auto Sell Orchard Fruits",
+        Description = "Sells all stored orchard fruits automatically.",
+        Default = false
+    }):OnChanged(function(value)
+        state.AutoOrchardSell = value
+    end)
+
+    Tabs.Sidegame:AddButton({
+        Title = "Teleport To Orchard",
+        Description = "Moves you to your orchard teleport pad.",
+        Callback = function()
+            local tycoon = getTycoon()
+            local orchard = tycoon and getLocalOrchard(tycoon)
+            local hrp = getRootPart()
+            local teleport = orchard and orchard.Instance and orchard.Instance:FindFirstChild("Teleport")
+            if hrp and teleport and teleport:IsA("BasePart") then
+                hrp.CFrame = teleport.CFrame + Vector3.new(0, 4, 0)
+            end
+        end
+    })
+
+    Tabs.Sidegame:AddSection("Sewer")
+
+    Tabs.Sidegame:AddToggle("AutoSewerLeversToggle", {
+        Title = "Auto Sewer Levers",
+        Description = "Pulls sewer levers automatically when prompts are available.",
+        Default = false
+    }):OnChanged(function(value)
+        state.AutoSewerLevers = value
+        if value then
+            refreshSewerPrompts()
+        end
+    end)
+
+    Tabs.Sidegame:AddToggle("AutoSewerExitsToggle", {
+        Title = "Auto Sewer Exits",
+        Description = "Uses sewer exit prompts automatically.",
+        Default = false
+    }):OnChanged(function(value)
+        state.AutoSewerExits = value
+    end)
+
+    Tabs.Sidegame:AddToggle("AutoSewerCashVineToggle", {
+        Title = "Auto Cash Vine",
+        Description = "Triggers the sewer cash vine prompt automatically.",
+        Default = false
+    }):OnChanged(function(value)
+        state.AutoSewerCashVine = value
+    end)
+
+    Tabs.Sidegame:AddToggle("AutoSewerAlienToggle", {
+        Title = "Auto Sewer Alien",
+        Description = "Interacts with the sewer alien prompts automatically.",
+        Default = false
+    }):OnChanged(function(value)
+        state.AutoSewerAlien = value
+    end)
+
+    Tabs.Sidegame:AddButton({
+        Title = "Teleport To Sewer",
+        Description = "Moves you near the sewer alien area.",
+        Callback = function()
+            local hrp = getRootPart()
+            local sewer = workspace:FindFirstChild("Map") and workspace.Map:FindFirstChild("Sewer")
+            local promptPart = sewer and sewer:FindFirstChild("SewerAlien", true)
+            local root = promptPart and promptPart:FindFirstChild("ListenPrompt")
+            if hrp and root and root:IsA("BasePart") then
+                hrp.CFrame = root.CFrame + Vector3.new(0, 4, 0)
+            end
+        end
+    })
 
     Tabs.Progression:AddToggle("AutoRebirthToggle", {
         Title = "Auto Rebirth",
