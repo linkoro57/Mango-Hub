@@ -630,8 +630,10 @@ function MangoUI:CreateWindow(config)
         local margin = 8
 
         if isMobile then
-            local maxOffsetX = math.max(0, math.floor((currentViewport.X - main.AbsoluteSize.X) / 2) - margin)
-            local maxOffsetY = math.max(0, math.floor((currentViewport.Y - main.AbsoluteSize.Y) / 2) - margin)
+            local minVisibleX = math.min(main.AbsoluteSize.X, 96)
+            local minVisibleY = math.min(main.AbsoluteSize.Y, barHeight + 12)
+            local maxOffsetX = math.max(0, math.floor((currentViewport.X + main.AbsoluteSize.X) / 2) - minVisibleX)
+            local maxOffsetY = math.max(0, math.floor((currentViewport.Y + main.AbsoluteSize.Y) / 2) - minVisibleY)
             local offsetX = math.clamp(main.Position.X.Offset, -maxOffsetX, maxOffsetX)
             local offsetY = math.clamp(main.Position.Y.Offset, -maxOffsetY, maxOffsetY)
             main.Position = UDim2.new(0.5, math.floor(offsetX), 0.5, math.floor(offsetY))
@@ -645,34 +647,41 @@ function MangoUI:CreateWindow(config)
         main.Position = UDim2.new(0, math.floor(offsetX), 0, math.floor(offsetY))
     end
 
-    local dragging, dragStart, startPos, dragInput, dragInputType
+    local dragging, dragStart, startPos, dragInput
+    local function updateDrag(input)
+        local delta = input.Position - dragStart
+        main.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+        clampWindowPosition()
+    end
+
     bar.InputBegan:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
             dragging = true
             dragStart = input.Position
             startPos = main.Position
+
+            input.Changed:Connect(function()
+                if input.UserInputState == Enum.UserInputState.End then
+                    dragging = false
+                    dragInput = nil
+                end
+            end)
+        end
+    end)
+    bar.InputChanged:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
             dragInput = input
-            dragInputType = input.UserInputType
         end
     end)
     UserInputService.InputChanged:Connect(function(input)
-        if not dragging then
-            return
-        end
-
-        local isMouseDrag = dragInputType == Enum.UserInputType.MouseButton1 and input.UserInputType == Enum.UserInputType.MouseMovement
-        local isTouchDrag = dragInputType == Enum.UserInputType.Touch and input == dragInput
-        if isMouseDrag or isTouchDrag then
-            local delta = input.Position - dragStart
-            main.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
-            clampWindowPosition()
+        if dragging and input == dragInput then
+            updateDrag(input)
         end
     end)
     UserInputService.InputEnded:Connect(function(input)
-        if dragging and (input == dragInput or (dragInputType == Enum.UserInputType.MouseButton1 and input.UserInputType == Enum.UserInputType.MouseButton1)) then
+        if dragging and input == dragInput then
             dragging = false
             dragInput = nil
-            dragInputType = nil
         end
     end)
 

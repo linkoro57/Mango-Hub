@@ -158,6 +158,8 @@ local scriptAlive = true
 local cacheRoot, buyCache, earnerCache = nil, {}, {}
 local fruitCache, savedCFrame = {}, nil
 local phoneCooldown = 0
+local cacheRefreshAt = 0
+local statsRefreshAt = 0
 local status = {
     cash = "--",
     investors = "--",
@@ -268,10 +270,12 @@ local function refreshCaches(tycoon)
         return
     end
 
-    if cacheRoot == tycoon.Instance and #buyCache > 0 then
+    local now = os.clock()
+    if cacheRoot == tycoon.Instance and #buyCache > 0 and now < cacheRefreshAt then
         return
     end
 
+    cacheRefreshAt = now + 2
     cacheRoot, buyCache, earnerCache = tycoon.Instance, {}, {}
 
     for _, instance in CollectionService:GetTagged("Tycoon.Purchase") do
@@ -285,6 +289,54 @@ local function refreshCaches(tycoon)
             table.insert(earnerCache, instance)
         end
     end
+end
+
+local function anyAutomationEnabled()
+    return state.AutoBuy
+        or state.AutoUpgradeEarners
+        or state.AutoUpgradePowers
+        or state.AutoWake
+        or state.AutoCashDrop
+        or state.AutoPhone
+        or state.AutoFruit
+        or state.AutoRebirth
+        or state.AutoEvolve
+        or state.AutoAscend
+end
+
+local function updateStatusSnapshot(tycoon)
+    local now = os.clock()
+    if now < statsRefreshAt then
+        return
+    end
+
+    statsRefreshAt = now + 0.5
+
+    pcall(function()
+        local balances = tycoon:GetComponent(ClientTycoonBalances) or tycoon:GetComponent(TycoonBalances)
+        if balances then
+            pcall(function()
+                status.cash = Huge.formatShort(balances:GetCash())
+            end)
+            pcall(function()
+                status.investors = Huge.formatShort(balances:GetInvestors())
+            end)
+        end
+
+        local rebirth = tycoon:GetComponent(ClientTycoonRebirth)
+        if rebirth then
+            pcall(function()
+                status.rebirths = tostring(rebirth:GetRebirths())
+            end)
+        end
+
+        local evolution = tycoon:GetComponent(ClientTycoonEvolution)
+        if evolution then
+            pcall(function()
+                status.evolve = string.format("%.0f%%", math.clamp(evolution:GetEvolutionProgress() * 100, 0, 100))
+            end)
+        end
+    end)
 end
 
 local function doAutoBuy(tycoon)
@@ -641,77 +693,61 @@ local function startLogicLoop()
         while scriptAlive do
             local tycoon = getTycoon()
             if tycoon then
-                refreshCaches(tycoon)
-                pcall(function()
-                    local balances = tycoon:GetComponent(ClientTycoonBalances) or tycoon:GetComponent(TycoonBalances)
-                    if balances then
-                        pcall(function()
-                            status.cash = Huge.formatShort(balances:GetCash())
-                        end)
-                        pcall(function()
-                            status.investors = Huge.formatShort(balances:GetInvestors())
-                        end)
+                local automationEnabled = anyAutomationEnabled()
+                local actions = {}
+
+                if automationEnabled then
+                    if state.AutoBuy or state.AutoUpgradeEarners or state.AutoWake then
+                        refreshCaches(tycoon)
                     end
 
-                    local rebirth = tycoon:GetComponent(ClientTycoonRebirth)
-                    if rebirth then
-                        pcall(function()
-                            status.rebirths = tostring(rebirth:GetRebirths())
-                        end)
-                    end
+                    pcall(function()
+                        if state.AutoBuy then
+                            doAutoBuy(tycoon)
+                            table.insert(actions, "buy")
+                        end
+                        if state.AutoUpgradeEarners then
+                            doUpgradeEarners(tycoon)
+                            table.insert(actions, "upg")
+                        end
+                        if state.AutoUpgradePowers then
+                            doUpgradePowers(tycoon)
+                            table.insert(actions, "pow")
+                        end
+                        if state.AutoWake then
+                            doWake()
+                            table.insert(actions, "wake")
+                        end
+                        if state.AutoPhone then
+                            doPhone(tycoon)
+                            table.insert(actions, "deal")
+                        end
+                        if state.AutoFruit then
+                            table.insert(actions, "fruit")
+                        end
+                        if state.AutoRebirth then
+                            tryRebirth(tycoon)
+                            table.insert(actions, "rebirth")
+                        end
+                        if state.AutoEvolve then
+                            tryEvolve(tycoon)
+                            table.insert(actions, "evolve")
+                        end
+                        if state.AutoAscend then
+                            tryAscend(tycoon)
+                            table.insert(actions, "ascend")
+                        end
+                    end)
+                end
 
-                    local evolution = tycoon:GetComponent(ClientTycoonEvolution)
-                    if evolution then
-                        pcall(function()
-                            status.evolve = string.format("%.0f%%", math.clamp(evolution:GetEvolutionProgress() * 100, 0, 100))
-                        end)
-                    end
-
-                    local actions = {}
-                    if state.AutoBuy then
-                        doAutoBuy(tycoon)
-                        table.insert(actions, "buy")
-                    end
-                    if state.AutoUpgradeEarners then
-                        doUpgradeEarners(tycoon)
-                        table.insert(actions, "upg")
-                    end
-                    if state.AutoUpgradePowers then
-                        doUpgradePowers(tycoon)
-                        table.insert(actions, "pow")
-                    end
-                    if state.AutoWake then
-                        doWake()
-                        table.insert(actions, "wake")
-                    end
-                    if state.AutoPhone then
-                        doPhone(tycoon)
-                        table.insert(actions, "deal")
-                    end
-                    if state.AutoFruit then
-                        table.insert(actions, "fruit")
-                    end
-                    if state.AutoRebirth then
-                        tryRebirth(tycoon)
-                        table.insert(actions, "rebirth")
-                    end
-                    if state.AutoEvolve then
-                        tryEvolve(tycoon)
-                        table.insert(actions, "evolve")
-                    end
-                    if state.AutoAscend then
-                        tryAscend(tycoon)
-                        table.insert(actions, "ascend")
-                    end
-
-                    status.actions = #actions > 0 and table.concat(actions, ", ") or "idle"
-                end)
+                updateStatusSnapshot(tycoon)
+                status.actions = #actions > 0 and table.concat(actions, ", ") or "idle"
             else
                 status.actions = "waiting for tycoon..."
             end
 
             updateUi()
-            task.wait(0.1)
+            task.wait(anyAutomationEnabled() and 0.2 or 0.5)
         end
     end)
 end
