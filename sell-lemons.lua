@@ -296,11 +296,12 @@ local function refreshCaches(tycoon)
     end
 
     local now = os.clock()
+    local refreshDelay = state.AutoBuy and 0.2 or 4
     if cacheRoot == tycoon.Instance and (#buyCache > 0 or #earnerCache > 0) and now < cacheRefreshAt then
         return
     end
 
-    cacheRefreshAt = now + 4
+    cacheRefreshAt = now + refreshDelay
     cacheRoot, buyCache, earnerCache = tycoon.Instance, {}, {}
 
     for _, instance in CollectionService:GetTagged("Tycoon.Purchase") do
@@ -563,39 +564,53 @@ local function doAutoBuy(tycoon)
         return
     end
 
-    local now = os.clock()
-    local cash = balances:GetCash()
+    local purchasedCount = 0
 
-    for _, instance in buyCache do
-        if not state.AutoBuy then
-            return
-        end
+    for _ = 1, 3 do
+        local now = os.clock()
+        local cash = balances:GetCash()
+        local purchasedThisPass = false
 
-        if (purchaseRetryAt[instance] or 0) > now then
-            continue
-        end
-
-        if isPurchaseReady(instance) then
-            local entity = Entity.getUnsafe(instance)
-            if entity then
-                local okPrice, price = pcall(function()
-                    return entity:GetPrice()
-                end)
-
-                if okPrice and price and afford(price, cash) then
-                    local okPurchase = pcall(function()
-                        entity:TryPurchaseAsync(false)
-                    end)
-                    purchaseRetryAt[instance] = okPurchase and (now + 0.15) or (now + 2)
-                    if okPurchase then
-                        cash = balances:GetCash()
-                    end
-                else
-                    purchaseRetryAt[instance] = now + (okPrice and 0.35 or 1.5)
-                end
+        for _, instance in buyCache do
+            if not state.AutoBuy then
+                return
             end
-        else
-            purchaseRetryAt[instance] = nil
+
+            if (purchaseRetryAt[instance] or 0) > now then
+                continue
+            end
+
+            if isPurchaseReady(instance) then
+                local entity = Entity.getUnsafe(instance)
+                if entity then
+                    local okPrice, price = pcall(function()
+                        return entity:GetPrice()
+                    end)
+
+                    if okPrice and price and afford(price, cash) then
+                        local okPurchase = pcall(function()
+                            entity:TryPurchaseAsync(false)
+                        end)
+                        purchaseRetryAt[instance] = okPurchase and (now + 0.03) or (now + 1.25)
+                        if okPurchase then
+                            purchasedCount = purchasedCount + 1
+                            purchasedThisPass = true
+                            cash = balances:GetCash()
+                            if purchasedCount >= 12 then
+                                return
+                            end
+                        end
+                    else
+                        purchaseRetryAt[instance] = now + (okPrice and 0.08 or 0.6)
+                    end
+                end
+            else
+                purchaseRetryAt[instance] = nil
+            end
+        end
+
+        if not purchasedThisPass then
+            return
         end
     end
 end
@@ -981,6 +996,23 @@ task.spawn(function()
     end
 end)
 
+task.spawn(function()
+    while scriptAlive do
+        if state.AutoBuy then
+            local tycoon = getTycoon()
+            if tycoon then
+                refreshCaches(tycoon)
+                doAutoBuy(tycoon)
+                task.wait(0.03)
+            else
+                task.wait(0.1)
+            end
+        else
+            task.wait(0.1)
+        end
+    end
+end)
+
 local updateUi = function() end
 
 local function startLogicLoop()
@@ -1002,7 +1034,6 @@ local function startLogicLoop()
 
                     pcall(function()
                         if state.AutoBuy then
-                            doAutoBuy(tycoon)
                             table.insert(actions, "buy")
                         end
                         if state.AutoUpgradeEarners then
@@ -1339,6 +1370,11 @@ local function buildFluentGui()
     SaveManager:SetIgnoreIndexes({})
     InterfaceManager:SetFolder("MangoHub")
     SaveManager:SetFolder("MangoHub/sell-lemons")
+    Tabs.Settings:AddSection("Credits")
+    Tabs.Settings:AddParagraph({
+        Title = "Mango Hub Credits",
+        Content = "Script by linkoro57\nUI design by Olemad"
+    })
     InterfaceManager:BuildInterfaceSection(Tabs.Settings)
     SaveManager:BuildConfigSection(Tabs.Settings)
 

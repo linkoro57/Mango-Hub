@@ -313,6 +313,11 @@ SaveManager:IgnoreThemeSettings()
 SaveManager:SetIgnoreIndexes({})
 InterfaceManager:SetFolder("FluentScriptHub")
 SaveManager:SetFolder("FluentScriptHub/specific-game")
+Tabs.Settings:AddSection("Credits")
+Tabs.Settings:AddParagraph({
+    Title = "Mango Hub Credits",
+    Content = "Script by linkoro57\nUI design by Olemad"
+})
 InterfaceManager:BuildInterfaceSection(Tabs.Settings)
 SaveManager:BuildConfigSection(Tabs.Settings)
 

@@ -387,6 +387,11 @@ SaveManager:IgnoreThemeSettings()
 SaveManager:SetIgnoreIndexes({})
 InterfaceManager:SetFolder("MangoHub")
 SaveManager:SetFolder("MangoHub/flex-fps-ping")
+Tabs.Settings:AddSection("Credits")
+Tabs.Settings:AddParagraph({
+    Title = "Mango Hub Credits",
+    Content = "Script by linkoro57\nUI design by Olemad"
+})
 InterfaceManager:BuildInterfaceSection(Tabs.Settings)
 SaveManager:BuildConfigSection(Tabs.Settings)
 
