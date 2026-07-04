@@ -157,6 +157,7 @@ local scriptAlive = true
 
 local cacheRoot, buyCache, earnerCache = nil, {}, {}
 local fruitCache, savedCFrame = {}, nil
+local powerRetryAt = {}
 local phoneCooldown = 0
 local cacheRefreshAt = 0
 local statsRefreshAt = 0
@@ -415,6 +416,11 @@ local function doUpgradePowers(tycoon)
             return
         end
 
+        local now = os.clock()
+        if (powerRetryAt[name] or 0) > now then
+            continue
+        end
+
         local okLevel, level = pcall(function()
             return powers:GetLevel(name)
         end)
@@ -431,10 +437,15 @@ local function doUpgradePowers(tycoon)
             end)
 
             if okPrice and price and okInvestors and afford(price, investors) then
-                pcall(function()
+                local okUpgrade = pcall(function()
                     powers:UpgradeAsync(name)
                 end)
+                powerRetryAt[name] = okUpgrade and (now + 0.2) or (now + 8)
+            elseif okPrice and not price then
+                powerRetryAt[name] = now + 4
             end
+        else
+            powerRetryAt[name] = nil
         end
     end
 end
@@ -569,21 +580,26 @@ end
 
 local function gatherFruit()
     fruitCache = {}
-    local localTycoon = getTycoon() and getTycoon().Instance
+    local tycoon = getTycoon()
+    local localTycoon = tycoon and tycoon.Instance
+    if not localTycoon then
+        return
+    end
 
-    for _, descendant in workspace:GetDescendants() do
-        if descendant:IsA("BasePart") and descendant.Name == "ClickPart" and descendant.Parent and descendant.Parent.Name == "Fruit" then
-            local ancestor = descendant
-            while ancestor.Parent and ancestor.Parent ~= workspace do
-                ancestor = ancestor.Parent
+    local seen = {}
+
+    for _, descendant in localTycoon:GetDescendants() do
+        if descendant:IsA("BasePart") and descendant.Parent and descendant.Parent.Name == "Fruit" then
+            local isFruitClickPart = descendant.Name == "ClickPart" or descendant.Name == "ClickFruitPart"
+            local detector = isFruitClickPart and descendant:FindFirstChildOfClass("ClickDetector")
+
+            if not detector then
+                detector = descendant:FindFirstChildWhichIsA("ClickDetector", true)
             end
 
-            local mine = ancestor.Name == "LemonTree" or (localTycoon and descendant:IsDescendantOf(localTycoon))
-            if mine then
-                local detector = descendant:FindFirstChildOfClass("ClickDetector")
-                if detector then
-                    table.insert(fruitCache, { part = descendant, cd = detector })
-                end
+            if detector and not seen[detector] then
+                seen[detector] = true
+                table.insert(fruitCache, { part = descendant, cd = detector })
             end
         end
     end
