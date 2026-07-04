@@ -711,19 +711,22 @@ function MangoUI:CreateWindow(config)
             dragInputType = nil
         end
     end)
-    RunService.RenderStepped:Connect(function()
-        if dragging and dragInputType == Enum.UserInputType.Touch then
-            local touches = UserInputService:GetTouches()
-            local touch = touches[1]
-            if touch then
-                updateDrag(touch)
-            else
-                dragging = false
-                dragInput = nil
-                dragInputType = nil
+    local renderSignal = RunService and (RunService.RenderStepped or RunService.Heartbeat)
+    if renderSignal then
+        renderSignal:Connect(function()
+            if dragging and dragInputType == Enum.UserInputType.Touch then
+                local touches = UserInputService:GetTouches()
+                local touch = touches[1]
+                if touch then
+                    updateDrag(touch)
+                else
+                    dragging = false
+                    dragInput = nil
+                    dragInputType = nil
+                end
             end
-        end
-    end)
+        end)
+    end
 
     local currentCamera = workspace.CurrentCamera
     if currentCamera then
